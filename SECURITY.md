@@ -18,5 +18,3 @@
 - Add schema validation for each adapter payload and reject unknown high-risk fields.
 - Add dependency scanning, secret scanning, CodeQL, and signed release provenance in CI.
 - Add authorization tests for every future state-changing endpoint.
-
-The requested `alert-fix-71` branch was not found in the checked-out repositories or accessible `febuz` remotes; it remains a tracked security-workstream input until its owning repository is identified.
