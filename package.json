@@ -1,0 +1,19 @@
+{
+  "name": "@knitweb/control-plane",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Secure event-driven control plane for cross-repository engineering state",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "npm run build && node --test dist/test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
