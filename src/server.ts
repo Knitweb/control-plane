@@ -1,6 +1,15 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { JsonlOutbox } from './outbox.js'
-import { bodyWithinLimit, maxBodyBytes, readBearerToken, safeEqual, verifyGithubSignature } from './security.js'
+import {
+  bodyWithinLimit,
+  FixedWindowRateLimiter,
+  isTrustedHost,
+  isValidGithubDelivery,
+  maxBodyBytes,
+  readBearerToken,
+  safeEqual,
+  verifyGithubSignature,
+} from './security.js'
 import { normalizeGithubWebhook } from './webhook.js'
 
 const host = process.env.CONTROL_PLANE_HOST ?? '127.0.0.1'
@@ -8,6 +17,14 @@ const port = Number(process.env.CONTROL_PLANE_PORT ?? 8787)
 const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET
 const adminToken = process.env.CONTROL_PLANE_ADMIN_TOKEN
 const outbox = new JsonlOutbox(process.env.CONTROL_PLANE_OUTBOX_PATH ?? './data/outbox.jsonl')
+const trustedHosts = (process.env.CONTROL_PLANE_TRUSTED_HOSTS ?? '127.0.0.1,localhost')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean)
+const webhookRateLimit = new FixedWindowRateLimiter(
+  Number(process.env.CONTROL_PLANE_WEBHOOK_RATE_LIMIT ?? 60),
+  60_000,
+)
 
 function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value
@@ -45,6 +62,11 @@ const server = createServer(async (request, response) => {
     const method = request.method ?? 'GET'
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
 
+    if (!isTrustedHost(headerValue(request.headers.host), trustedHosts)) {
+      send(response, 400, { error: 'untrusted host' })
+      return
+    }
+
     if (method === 'GET' && url.pathname === '/health') {
       send(response, 200, { ok: true, service: 'control-plane', events: await outbox.size() })
       return
@@ -62,6 +84,11 @@ const server = createServer(async (request, response) => {
     }
 
     if (method === 'POST' && url.pathname === '/webhooks/github') {
+      const remoteAddress = request.socket.remoteAddress ?? 'unknown'
+      if (!webhookRateLimit.allow(remoteAddress)) {
+        send(response, 429, { error: 'rate limit exceeded' })
+        return
+      }
       const body = await readBody(request)
       if (!verifyGithubSignature(body, headerValue(request.headers['x-hub-signature-256']), webhookSecret)) {
         send(response, 401, { error: 'invalid signature' })
@@ -78,9 +105,14 @@ const server = createServer(async (request, response) => {
         send(response, 400, { error: 'invalid JSON' })
         return
       }
+      const deliveryId = headerValue(request.headers['x-github-delivery'])
+      if (!isValidGithubDelivery(deliveryId)) {
+        send(response, 400, { error: 'valid GitHub delivery id required' })
+        return
+      }
       const event = normalizeGithubWebhook(
         headerValue(request.headers['x-github-event']),
-        headerValue(request.headers['x-github-delivery']),
+        deliveryId,
         payload,
       )
       const accepted = await outbox.append(event)

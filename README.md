@@ -22,6 +22,7 @@ The health endpoint is `GET /health`. Authenticated event inspection uses `Autho
 
 - GitHub webhook signatures are verified with HMAC-SHA256 and constant-time comparison.
 - Webhook bodies are capped at 1 MiB and must be JSON.
+- Webhooks require a trusted `Host`, a bounded GitHub delivery id, and a fixed-window source rate limit.
 - Event inspection requires a bearer token and bounded pagination.
 - Responses disable caching, framing, MIME sniffing, and referrer leakage.
 - Outbox files are created with owner-only permissions and are excluded from Git.
